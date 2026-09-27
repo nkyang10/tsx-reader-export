@@ -1,0 +1,43 @@
+MIT License
+
+Copyright (c) 2026 Canvas Reader contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This project is licensed under the MIT License above, matching the license of
+its upstream dependency.
+
+Third-party components
+----------------------
+
+`@thisismydesign/cursor-canvas-web` - https://github.com/thisismydesign/cursor-canvas-web
+  MIT License, Copyright (c) 2026 thisismydesign
+  The public, Mantine-backed shim of Cursor's virtual `cursor/canvas` module.
+  This project depends on it; it is not vendored. Its full license text ships
+  in `node_modules/@thisismydesign/cursor-canvas-web/LICENSE`.
+
+  `src/cursor-canvas.compat.mjs` re-exports that shim and wraps `useHostTheme()`
+  to add a `category` token group the public shim omits. The wrapper is covered
+  by this project's MIT license; the shim itself remains under its own MIT
+  license, reproduced above and in its own LICENSE file.
+
+Other dependencies (React, Mantine, esbuild, Electron, Recharts) are used under
+their own permissive licenses; see each package's LICENSE file.

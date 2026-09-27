@@ -1,0 +1,64 @@
+{
+  "name": "tsx-reader-export",
+  "version": "1.0.0",
+  "description": "Canvas Reader with HTML and PDF - convert Cursor canvas .tsx files into standalone static HTML. Cross-platform CLI + Electron viewer.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "cursor",
+    "canvas",
+    "tsx",
+    "html",
+    "static-site",
+    "ssr",
+    "electron"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nkyang10/tsx-reader-export.git"
+  },
+  "homepage": "https://github.com/nkyang10/tsx-reader-export#readme",
+  "bugs": {
+    "url": "https://github.com/nkyang10/tsx-reader-export/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prepare": "node scripts/embed-styles.mjs",
+    "embed-styles": "node scripts/embed-styles.mjs",
+    "check": "node scripts/check.mjs",
+    "build:exe": "node scripts/build-cli-exe.mjs",
+    "build:release": "node scripts/build-release.mjs",
+    "build:deploy": "node scripts/build-deploy.mjs",
+    "build:viewer": "node scripts/build-viewer.mjs",
+    "sync": "npm run build:viewer && npm run build:deploy",
+    "tsx-reader-export": "node src/cli.mjs",
+    "capture": "npm run build:viewer && npm --prefix viewer exec electron viewer/capture.mjs",
+    "viewer": "npm --prefix viewer run start",
+    "viewer:smoke": "npm run build:viewer && npm --prefix viewer exec electron viewer/smoke.mjs",
+    "viewer:dist": "npm --prefix viewer run dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mantine/charts": "7.17.8",
+    "@mantine/core": "7.17.8",
+    "@mantine/hooks": "7.17.8",
+    "@thisismydesign/cursor-canvas-web": "0.3.0",
+    "esbuild": "0.25.12",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "2.15.4"
+  },
+  "overrides": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "postject": "^1.0.0-alpha.6",
+    "typescript": "^5.7.0"
+  }
+}

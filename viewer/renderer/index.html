@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Canvas Reader</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #141414;
+    background: #f3f3f3;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: #fff;
+    border-bottom: 1px solid #e4e4e4;
+    flex-wrap: wrap;
+  }
+  header .spacer { flex: 1; }
+  .file {
+    font-weight: 600;
+    max-width: 46ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button {
+    font: inherit;
+    padding: 6px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #f0f0f0; }
+  button.primary {
+    background: #3685bf;
+    border-color: #2e76ab;
+    color: #fff;
+  }
+  button.primary:hover { background: #2e76ab; }
+  #status {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #555;
+    border-bottom: 1px solid #e4e4e4;
+    background: #fafafa;
+    min-height: 34px;
+  }
+  #status.error { color: #b3261e; background: #fdf3f2; }
+  #drop {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 15px;
+  }
+  iframe { flex: 1; border: 0; background: #fff; display: none; }
+  iframe.visible { display: block; }
+</style>
+</head>
+<body>
+  <header>
+    <button class="primary" id="btn-open">Open .tsx</button>
+    <button id="btn-save" disabled>Save as HTML</button>
+    <button id="btn-print" disabled>Print / PDF</button>
+    <span class="spacer"></span>
+    <span class="file" id="file">No file open</span>
+  </header>
+  <div id="status">Drop a .tsx file here, or click "Open .tsx".</div>
+  <div id="drop">Preview appears here.</div>
+  <iframe id="preview" title="Canvas preview"></iframe>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+let lastHtml = null;
+
+function setStatus(msg, isError) {
+  const el = $("status");
+  el.textContent = msg;
+  el.classList.toggle("error", !!isError);
+}
+
+async function loadFile(filePath) {
+  setStatus("Rendering " + filePath + " ...");
+  try {
+    const html = await window.viewer.renderPath(filePath);
+    showPreview(html, filePath);
+  } catch (e) {
+    setStatus("Failed: " + (e && e.message ? e.message : e), true);
+  }
+}
+
+function showPreview(html, filePath) {
+  lastHtml = html;
+  const frame = $("preview");
+  frame.srcdoc = html;
+  frame.classList.add("visible");
+  $("drop").style.display = "none";
+  $("file").textContent = filePath;
+  $("btn-save").disabled = false;
+  $("btn-print").disabled = false;
+  setStatus("Loaded " + filePath);
+}
+
+$("btn-open").addEventListener("click", async () => {
+  const res = await window.viewer.open();
+  if (!res.opened) {
+    if (res.error) setStatus("Failed: " + res.error, true);
+    return;
+  }
+  // Re-render in-process so the HTML is available for the inline preview.
+  try {
+    const html = await window.viewer.renderPath(res.path);
+    showPreview(html, res.path);
+  } catch (e) {
+    setStatus("Failed: " + (e && e.message ? e.message : e), true);
+  }
+});
+
+$("btn-save").addEventListener("click", async () => {
+  const res = await window.viewer.save({ html: lastHtml });
+  if (res.saved) setStatus("Saved " + res.path);
+  else if (res.error) setStatus("Failed: " + res.error, true);
+});
+
+$("btn-print").addEventListener("click", async () => {
+  setStatus("Opening print dialog ...");
+  const res = await window.viewer.print({ html: lastHtml });
+  if (res && res.error) setStatus("Print failed: " + res.error, true);
+});
+
+// Drag & drop
+document.addEventListener("dragover", (e) => { e.preventDefault(); });
+document.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!f) return;
+  setStatus("Rendering dropped " + f.name + " ...");
+  try {
+    const text = await f.text();
+    const html = await window.viewer.renderSource(f.name, text);
+    showPreview(html, f.name);
+  } catch (err) {
+    setStatus("Failed: " + (err && err.message ? err.message : err), true);
+  }
+});
+</script>
+</body>
+</html>

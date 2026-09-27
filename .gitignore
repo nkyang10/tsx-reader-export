@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# ---------------------------------------------------------------------------
+# GENERATED FILES - never commit these. They are rebuilt by the scripts below.
+#   npm run embed-styles   -> src/styles.generated.mjs
+#   npm run build:viewer   -> viewer/src/
+#   npm run build:deploy   -> deployment/win/src/ + testcases/
+# `npm install` runs `prepare`, which regenerates src/styles.generated.mjs.
+# ---------------------------------------------------------------------------
+src/styles.generated.mjs
+viewer/src/
+deployment/win/src/
+deployment/win/testcases/
+
+# Build output
+dist/
+out/
+release/
+.release-zip/
+*.zip
+viewer/dist/
+.sea-build/
+.exe-tmp/
+
+# Generated app icon (rebuild with: powershell -File scripts/make-icon.ps1)
+viewer/build/
+
+# Staged by scripts/build-viewer.mjs for electron-builder, which cannot reach
+# the repo root from its appDir. Never commit; it is a copy of ./LICENSE.
+viewer/LICENSE
+
+# Committed README screenshots (npm run capture -> docs/images/). Tracked on
+# purpose; capture.mjs refuses to put anything but the synthetic fixture here.
+# Throwaway captures of your own canvas go elsewhere via CAPTURE_OUT.
+docs/assets/
+
+# Runtime temp (bundled canvases)
+.tsx-reader-export-tmp/
+
+# Secrets - never commit API keys / tokens
+.env
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+
+# Unrelated runtime artifact in the working dir
+ut

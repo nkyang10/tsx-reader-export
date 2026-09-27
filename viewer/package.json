@@ -1,0 +1,42 @@
+{
+  "name": "tsx-reader-export-viewer",
+  "version": "1.0.0",
+  "description": "Canvas Reader - open a Cursor canvas .tsx, preview it, save as HTML, or print to PDF via the system dialog.",
+  "type": "module",
+  "main": "main.mjs",
+  "license": "MIT",
+  "author": "Canvas Reader",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "sync": "node ../scripts/build-viewer.mjs",
+    "smoke": "electron smoke.mjs",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "@mantine/charts": "7.17.8",
+    "@mantine/core": "7.17.8",
+    "@mantine/hooks": "7.17.8",
+    "@thisismydesign/cursor-canvas-web": "0.3.0",
+    "esbuild": "0.25.12",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "2.15.4"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "overrides": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.25.12": true,
+    "electron-builder@25.1.8": true
+  }
+}
