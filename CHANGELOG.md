@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-28
+
+The reader is the product, and the download now says so: it is the exe at the
+top level of the zip, and the CLI is the thing in the subfolder. The release is
+also 30 MB smaller.
+
+**Upgrading:** extract the new zip into a new folder rather than copying files
+over an old install — the reader and the CLI both moved. Full details in
+[`docs/release-notes-1.1.0.md`](docs/release-notes-1.1.0.md).
+
 ### Added
 
 - **macOS viewer builds in CI** (`.github/workflows/release-macos.yml`) — the

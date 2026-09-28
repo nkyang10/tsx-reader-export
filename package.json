@@ -1,6 +1,6 @@
 {
   "name": "tsx-reader-export",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Canvas Reader with HTML and PDF - convert Cursor canvas .tsx files into standalone static HTML. Cross-platform CLI + Electron viewer.",
   "type": "module",
   "license": "MIT",

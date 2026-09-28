@@ -5,6 +5,62 @@ Append every significant change here with a date and the rationale (rule #6 in
 
 ---
 
+## 2026-09-28 — Ship v1.1.0
+
+**Version**
+
+Both manifests went to **1.1.0**, not 2.0.0. The conversion tool, its flags and
+its output are byte-for-byte identical to 1.0.0, so the *product* did not break.
+What changed is the shape of the download, and 1.1.0's notes lead with a
+before/after table and say plainly: extract the zip into a new folder, do not
+copy files over an old install. If this ever needs to be a hard signal instead,
+2.0.0 is the right number — the argument for 1.1.0 is that only the paths moved.
+
+**A dead link found on the way**
+
+`README.md` linked `releases/download/v1.0.0/sample-output.pdf`. The v1.0.0
+release has exactly **one** asset, the zip — the PDF was never uploaded, so the
+link had been 404 since 1.0.0 shipped. Fixed by actually producing it:
+`npm run capture` with `CAPTURE_PDF=1`.
+
+That is the second time `--pdf` had to be smuggled past npm. `capture` expands to
+`npm --prefix viewer exec electron viewer/capture.mjs`, and `npm run capture --
+--pdf` puts `--pdf` at the end of that string, where `npm exec` eats it as its
+own flag — the script never sees it. `capture.mjs` already had the answer waiting
+(`CAPTURE_PDF=1`), and the images are captured either way, so the PDF step just
+silently did not run. Used the env route. **Worth changing the npm script to
+`npm --prefix viewer exec -- electron ...` so both routes work**; left alone here
+to keep this release diff about the release.
+
+**Capture is deterministic — verified, not assumed**
+
+Re-ran `npm run capture` and compared SHA-256 of all four committed PNGs before
+and after: **byte-identical**, no image churn in the diff. That doubles as a
+regression check on the layout work, since `output.png` is the exported HTML
+rendered in a browser and the viewer is a different copy of the source tree now.
+
+**Artifacts**
+
+| | v1.0.0 | v1.1.0 |
+|---|---|---|
+| zip | 177.6 MB | **171.2 MB** |
+| unpacked | 468.2 MB | **438.4 MB** |
+| entries | — | 16,354 |
+
+The 6.4 MB of the 30 MB saved survives compression, because the dead weight was
+mostly already-compressed `.js` type declarations plus a `.exe` tool.
+
+**Verification**
+
+- `npm run check` — version consistent across both manifests, fixture renders.
+- `npm run build:release -- --zip` from a clean tree; inspected the zip's
+  top level: `tsx-reader-export-viewer.exe` at the root, `cli\` beside the
+  Electron runtime, exactly as the notes describe.
+- Release CLI converts the fixture (246,703 bytes); reader smokes at
+  246,704 chars.
+
+---
+
 ## 2026-09-28 — The reader moves to the top level of the release
 
 **What was asked**
