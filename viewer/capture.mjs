@@ -1,6 +1,6 @@
 // Generate the README screenshots. Run with:
 //   npm run capture                 -> the four committed PNGs
-//   npm run capture -- --pdf        -> also dist/sample-output.pdf
+//   npm run capture -- --pdf        -> also out/sample-output.pdf
 //
 // Produces, in docs/images/:
 //   viewer-empty.png   the reader on its own, nothing loaded (drop zone)
@@ -8,9 +8,10 @@
 //   viewer-error.png   the reader's failure state (red status bar)
 //   output.png         the exported HTML by itself, as a browser would show it
 //
-// and, with --pdf, dist/sample-output.pdf: the same HTML printed without the
+// and, with --pdf, out/sample-output.pdf: the same HTML printed without the
 // OS dialog. That one is a release artifact rather than documentation, so it
-// lands in the gitignored dist/ and is attached to the GitHub release.
+// lands in the gitignored out/ scratch folder and is attached to the GitHub
+// release.
 //
 // Native window chrome (the title bar reading "Canvas Reader") is in none of
 // them: capturePage() grabs only the web contents of a hidden window. Getting
@@ -166,11 +167,11 @@ app.whenReady().then(async () => {
     // --- optional: the same HTML as a real PDF, no print dialog involved ---
     // The Print button deliberately hands off to the OS dialog; this is the
     // headless equivalent. It is a release artifact, not documentation, so it
-    // goes to dist/ (gitignored) rather than into the committed docs/images/.
+    // goes to the gitignored out/ scratch folder, not the committed
+    // docs/images/. That folder is the repo's single scratch area: `npm run
+    // check` writes its renders there too.
     if (wantPdf) {
-      const pdfDir = outDir
-        ? assets
-        : path.join(root, "dist");
+      const pdfDir = outDir ? assets : path.join(root, "out");
       fs.mkdirSync(pdfDir, { recursive: true });
       const pdfWin = new BrowserWindow({ show: false });
       try {

@@ -38,18 +38,20 @@ and can be archived or emailed as a single file.
 
 Grab **`tsx-reader-export-1.0.0-windows-x64.zip`** from the
 [releases page](https://github.com/nkyang10/tsx-reader-export/releases/latest) and
-extract it anywhere. That's the whole installation.
+extract it anywhere. That's the whole installation — then double-click
+**`tsx-reader-export-viewer.exe`**, which is sitting right at the top level.
 
 **Requirements:** Windows 10+ (64-bit). **No installer, no Node.js, no build
 tools.**
 
 ```
 tsx-reader-export-1.0.0-windows-x64\
-  tsx-reader-export-viewer\
-    tsx-reader-export-viewer.exe     <- Canvas Reader, the app
-  tsx-reader-export.exe              <- command line converter
-  node_modules\             <- keep next to tsx-reader-export.exe
-  run-cli.bat
+  tsx-reader-export-viewer.exe     <- Canvas Reader, the app — double-click this
+  locales\  resources\  *.pak  *.dll   its runtime, keep it beside the exe
+  cli\
+    tsx-reader-export.exe          <- command line converter
+    node_modules\                  <- keep next to tsx-reader-export.exe
+    run-cli.bat
   LICENSE
   README.txt
 ```
@@ -58,12 +60,38 @@ tsx-reader-export-1.0.0-windows-x64\
 > *More info → Run anyway*. To avoid it, right-click the `.exe` → *Properties* →
 > tick **Unblock**.
 
+### macOS — unsigned tester build
+
+A macOS build exists, but only for trying it out. It is produced by
+[`.github/workflows/release-macos.yml`](.github/workflows/release-macos.yml) on
+a `macos-latest` runner: push a `v*` tag, or run the *release-macos* workflow
+manually, then download the `.dmg` or `.zip` from the run or the release.
+
+| | |
+|---|---|
+| Intel Mac | `tsx-reader-export-viewer-1.0.0-mac-x64.dmg` |
+| Apple silicon | `tsx-reader-export-viewer-1.0.0-mac-arm64.dmg` |
+
+**It is not signed or notarised**, so Gatekeeper blocks it on first launch.
+Right-click the app → **Open**, or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Canvas Reader.app"
+```
+
+No CLI is shipped for macOS — the `.exe` is a Windows-only build. On a Mac, run
+the CLI from source with `node src/cli.mjs <canvas.tsx> <out.html>`.
+
 ---
 
 ## The viewer — Canvas Reader
 
-Double-click **`tsx-reader-export-viewer\tsx-reader-export-viewer.exe`**. It starts in about a
-fifth of a second.
+Double-click **`tsx-reader-export-viewer.exe`**. It is at the top level of the
+extracted folder, and it starts in about a fifth of a second. The `locales\`,
+`resources\` and `.pak`/`.dll` files around it are Electron's runtime — they have
+to stay next to the exe, so don't delete them as "clutter".
+
+The CLI, if you want it, lives in the `cli\` subfolder.
 
 | What you want | How |
 |---|---|
@@ -91,8 +119,10 @@ The reader on its own, and what a bad canvas looks like:
 
 ## The command line
 
+The app is the main way in. The CLI is for scripting, and lives in `cli\`:
+
 ```bat
-tsx-reader-export.exe my.canvas.tsx out.html
+cli\tsx-reader-export.exe my.canvas.tsx out.html
 ```
 
 | Option | Meaning |
@@ -106,13 +136,14 @@ tsx-reader-export.exe my.canvas.tsx out.html
 Examples:
 
 ```bat
-tsx-reader-export.exe report.canvas.tsx report.html --title "Q3 Report"
-tsx-reader-export.exe report.canvas.tsx report.html --color-scheme dark
+cli\tsx-reader-export.exe report.canvas.tsx report.html --title "Q3 Report"
+cli\tsx-reader-export.exe report.canvas.tsx report.html --color-scheme dark
 ```
 
-> Keep `tsx-reader-export.exe` and its `node_modules\` folder together — the executable
-> carries its own runtime, but loads React and the canvas components from that
-> folder. Prefer an always-visible console? Run `run-cli.bat` instead.
+> Keep the whole `cli\` folder together — the executable carries its own runtime,
+> but loads React and the canvas components from its `node_modules\`. Prefer an
+> always-visible console? Run `cli\run-cli.bat` instead; it takes the same
+> arguments and pauses at the end.
 
 ---
 
@@ -132,14 +163,14 @@ Both programs write a detailed log if something fails:
 
 | Program | Log file |
 |---|---|
-| `tsx-reader-export.exe` | `logs\tsx-reader-export.log` next to it (or `%TEMP%\tsx-reader-export.log`) |
 | viewer | `%APPDATA%\tsx-reader-export-viewer\viewer.log` |
+| `cli\tsx-reader-export.exe` | `cli\logs\tsx-reader-export.log` (or `%TEMP%\tsx-reader-export.log`) |
 
 Each log records the arguments, paths, versions, and the full error. You can also
 check the packaged viewer end-to-end without using the UI:
 
 ```bat
-"tsx-reader-export-viewer\tsx-reader-export-viewer.exe" --smoke path\to\canvas.tsx
+tsx-reader-export-viewer.exe --smoke path\to\canvas.tsx
 ```
 
 **Only convert canvases you trust.** A `.tsx` canvas is *executed* (bundled and
@@ -190,10 +221,9 @@ platform-neutral ESM.
 | `npm run check` | regenerate styles, verify manifest versions, render every fixture |
 | `npm run build:release` | build both Windows artifacts into `release/` |
 | `npm run build:release -- --zip` | …and zip it for distribution |
-| `npm run build:exe` | single-file CLI `.exe` into `dist/exe/` |
-| `npm run sync` | copy `src/` into `viewer/src/` and `deployment/win/src/` |
+| `npm run build:exe` | the CLI `.exe` + its production deps, into `release/cli/` |
+| `npm run sync` | copy `src/` into `viewer/src/` |
 | `npm run build:viewer` | copy `src/` into `viewer/src/` only |
-| `npm run build:deploy` | sync the Windows deployment folder |
 | `npm run capture` | regenerate the README screenshots |
 | `npm run viewer` | launch the Electron viewer |
 | `npm run tsx-reader-export -- <in> <out>` | run the CLI |
@@ -213,10 +243,14 @@ src/            core.mjs, cli.mjs, cli-exe.mjs, cursor-canvas.compat.mjs
 scripts/        build + maintenance scripts
 testcases/      canonical fixtures the tool must render
 viewer/         Electron app (viewer/src/ is generated)
-deployment/win/ self-contained Windows distribution (src/ is generated)
 docs/           architecture.md, engineering-log.md, release notes
 AGENTS.md       project rules for contributors and agents
+out/            scratch: renders, smoke screenshots, sample PDF (gitignored)
+release/        the shipped Windows build (gitignored)
 ```
+
+Two output folders, one rule: **`out/` is scratch, `release/` ships.** There is
+no `dist/` and no staging copy of a shipped artifact.
 
 Generated files are **not** committed — `npm install` regenerates the styles and
 `npm run sync` refreshes the copies. See

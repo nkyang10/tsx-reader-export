@@ -1,10 +1,15 @@
 // Build a single-file Windows .exe for the CLI using Node's Single Executable
 // Application (SEA) plus postject.
 //
-//   dist/exe/tsx-reader-export.exe      <- Node runtime + bundled CLI injected
-//   dist/exe/node_modules/...  <- react, react-dom, shim, mantine, esbuild
-//   dist/exe/cursor-canvas.compat.mjs
-//   dist/exe/LICENSE         <- required: MIT notice must ship with the code
+//   release/cli/tsx-reader-export.exe   <- Node runtime + bundled CLI injected
+//   release/cli/node_modules/...        <- react, react-dom, shim, mantine, esbuild
+//   release/cli/cursor-canvas.compat.mjs
+//   release/cli/LICENSE                 <- required: MIT notice must ship with the code
+//
+// This is the ONE place the CLI is built. It used to be dist/exe/, which
+// build:release then copied to release/cli/ - a second 130 MB tree on disk and a
+// full copy of ~13,000 files per release build, for no benefit. Output defaults
+// to release/cli/ and `--out <dir>` moves it.
 //
 // The .exe embeds Node, so the machine needs no Node install. It still needs the
 // sibling node_modules (SEA can only require() built-ins).
@@ -16,7 +21,13 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const outDir = path.join(root, "dist", "exe");
+
+// --out <dir> (relative to the repo root unless absolute).
+const outFlag = process.argv.indexOf("--out");
+const outDir =
+  outFlag === -1
+    ? path.join(root, "release", "cli")
+    : path.resolve(root, process.argv[outFlag + 1] ?? "release/cli");
 const workDir = path.join(root, ".sea-build");
 
 const SENTINEL = "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2";
@@ -76,12 +87,71 @@ execFileSync(
 );
 console.log("injected SEA blob ->", path.relative(root, exePath));
 
-// 4. Ship the runtime dependencies next to the exe.
+// 4. Ship the runtime dependencies next to the exe - PRODUCTION ONLY.
+//
+//    This used to be `cpSync(node_modules, dist/exe/node_modules)`, which copied
+//    the *development* tree verbatim: typescript, postject, @types/node and
+//    friends rode along to end users, ~30 MB the exe never loads (42% of the
+//    folder). A `--omit=dev` install is what electron-builder already does for
+//    the viewer, whose pruned tree is 38 MB against this one's 72 MB. Same idea,
+//    one command, and it stays correct when a devDependency is added because
+//    npm decides what is dev-only, not a hand-maintained delete list.
+//
+//    `--ignore-scripts` is deliberate. The only postinstall in the production
+//    closure is esbuild's, and it merely validates the binary that already
+//    ships as an optionalDependency (@esbuild/<platform>), so skipping it costs
+//    nothing - and it also stops npm running this package's own `prepare`
+//    (embed-styles) inside the staging dir, which has no scripts/ to run it from.
+//    `--prefer-offline` keeps the build working without a network round trip
+//    once the cache is warm.
+const stageDir = path.join(workDir, "prodnm");
+fs.mkdirSync(stageDir, { recursive: true });
+for (const f of ["package.json", "package-lock.json"]) {
+  fs.copyFileSync(path.join(root, f), path.join(stageDir, f));
+}
+const npmArgs = [
+  "ci",
+  "--omit=dev",
+  "--ignore-scripts",
+  "--no-audit",
+  "--no-fund",
+  "--prefer-offline",
+];
+// Invoke npm's JS entry directly where possible: on Windows `npm` is npm.cmd,
+// and execFileSync cannot spawn a .cmd without a shell (EINVAL).
+const npmCli = path.join(
+  path.dirname(process.execPath),
+  "node_modules",
+  "npm",
+  "bin",
+  "npm-cli.js"
+);
+if (fs.existsSync(npmCli)) {
+  execFileSync(process.execPath, [npmCli, ...npmArgs], {
+    cwd: stageDir,
+    stdio: "inherit",
+  });
+} else {
+  execFileSync(process.platform === "win32" ? "npm.cmd" : "npm", npmArgs, {
+    cwd: stageDir,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
+}
 const nm = path.join(outDir, "node_modules");
-fs.cpSync(path.join(root, "node_modules"), nm, {
-  recursive: true,
-  filter: (src) => !src.includes(`${path.sep}.bin${path.sep}`),
-});
+fs.renameSync(path.join(stageDir, "node_modules"), nm);
+const devLeft = ["typescript", "postject", "@types/node"].filter((d) =>
+  fs.existsSync(path.join(nm, ...d.split("/")))
+);
+if (devLeft.length) {
+  throw new Error(
+    `dev-only packages leaked into the shipped node_modules: ${devLeft.join(", ")}`
+  );
+}
+console.log(
+  `production dependencies -> ${path.relative(root, nm)} ` +
+    `(${fs.readdirSync(nm).length} entries)`
+);
 fs.copyFileSync(
   path.join(root, "src", "cursor-canvas.compat.mjs"),
   path.join(outDir, "cursor-canvas.compat.mjs")

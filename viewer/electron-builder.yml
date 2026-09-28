@@ -63,7 +63,18 @@ mac:
   target:
     - target: dmg
       arch: [x64, arm64]
+    # zip alongside the dmg: a tester who cannot get past Gatekeeper on the
+    # dmg can drag the app straight out of the archive instead.
+    - target: zip
+      arch: [x64, arm64]
   category: public.app-category.developer-tools
+  # UNSIGNED on purpose (AGENTS.md naming: keyname in the filename, never the
+  # display name). `identity: null` also stops electron-builder auto-discovering
+  # a certificate from a developer's keychain, so a local mac build is identical
+  # to the CI one. Signing needs an Apple Developer account, which this
+  # repository deliberately does not use. See .github/workflows/release-macos.yml.
+  identity: null
+  artifactName: "${name}-${version}-mac-${arch}.${ext}"
 
 linux:
   target:

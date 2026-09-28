@@ -81,8 +81,9 @@ hand-written or generated.
 - `viewer/` — cross-platform **Electron tsx viewer**: opens a `.tsx`, previews
   it in-window, saves as HTML, prints/PDFs via the system print dialog.
   `viewer/src/` is a **generated** copy of `src/` (gitignored).
-- `deployment/win/` — self-contained Windows CLI distribution. `src/` and
-  `testcases/` inside it are **generated** (gitignored).
+- `deployment/win/` — **removed.** It was a third way to ship the CLI (source +
+  `install.ps1` that downloaded portable Node + `npm ci`), strictly worse than
+  the SEA exe, which needs no Node and no install step. Do not bring it back.
 - `docs/architecture.md` — how it fits together and why (read this first).
 - `docs/engineering-log.md` — dated log of every change.
 - `.env` — local secrets (git-ignored). `.env.example` documents it.
@@ -91,14 +92,26 @@ hand-written or generated.
 
 ```bash
 npm install            # also regenerates src/styles.generated.mjs (prepare)
-npm run check          # render every fixture in testcases/ and verify output
-npm run sync           # viewer/src + deployment/win/src
+npm run check          # render every fixture in testcases/ -> out/
+npm run sync           # copy src/ into viewer/src/
 node src/cli.mjs <canvas.tsx> <out.html> [--title "T"]
 
-npm run build:exe      # single-file CLI exe  -> dist/exe/
-npm run build:release  # both exes            -> release/
+npm run build:exe      # CLI exe + prod deps  -> release/cli/
+npm run build:release  # both artifacts       -> release/
 npm run viewer         # launch the Electron viewer
 ```
+
+## Scratch vs shipped output
+
+Two folders, one rule: **`out/` is scratch, `release/` ships.** There is no
+`dist/` and no staging tree.
+
+- `out/` — gitignored. `npm run check` renders, the smoke test screenshots,
+  `npm run capture -- --pdf` writes the sample PDF. Safe to delete at any time.
+- `release/` — gitignored, the distributable. `build:exe` writes `release\cli\`
+  **in place**; `build:release` adds the viewer beside it. `dist\exe\` used to
+  exist as a duplicate that was copied across — do not reintroduce a staging
+  copy of a shipped artifact.
 
 ## Rules
 
@@ -106,9 +119,8 @@ npm run viewer         # launch the Electron viewer
    Do not hard-code keys in source or commit them. Use `.env.example` as the
    template.
 2. **Never commit generated files.** `src/styles.generated.mjs`,
-   `viewer/src/`, `viewer/LICENSE`, `deployment/win/src/`,
-   `deployment/win/testcases/`, `viewer/build/`, and everything under
-   `dist/`, `out/`, `release/`, `viewer/dist/`, `.tsx-reader-export-tmp/` are
+   `viewer/src/`, `viewer/LICENSE`, `viewer/build/`, and everything under
+   `out/`, `release/`, `viewer/dist/`, `.tsx-reader-export-tmp/` are
    build outputs. Edit the source and re-run the relevant `build:*` script
    instead. `docs/images/` is the one deliberate exception — see rule 12.
 3. **Keep a single React instance.** Canvas bundles must externalize
@@ -167,15 +179,10 @@ parsed, so only convert files you trust.
 
 ## Deployment model (Windows)
 
-`deployment/win/` is a self-contained folder you can hand to a Windows user:
-
-- `package.json` — locked dependencies (kept in sync by `npm run build:deploy`).
-- `src/`, `testcases/` — **generated** copies (gitignored).
-- `install.ps1` — downloads a **portable Node.js** (if none present) into
-  `./node`, then runs `npm ci` to populate `node_modules/`.
-- `run.bat` — entry point: `run.bat <canvas.tsx> [out.html] [--title T]`.
-
-Run `npm run build:deploy` after changing root `src/` or `testcases/`.
+`npm run build:release` writes the whole Windows distribution into `release/`:
+the unpacked reader at the top level, the CLI in `release\cli\`. Neither needs
+an installer or a Node install. See "Scratch vs shipped output" above for the
+layout and `docs/architecture.md` for why the reader sits at the root.
 
 ## Deployment model (viewer)
 
@@ -183,16 +190,20 @@ Run `npm run build:deploy` after changing root `src/` or `testcases/`.
 (or `npm run viewer` from the root) opens the viewer; it renders any `.tsx` with
 the same core as the CLI, previews it in-window, and can save as HTML or print
 via the OS print dialog. Package distributables with electron-builder
-(`npm run viewer:dist`; targets Windows nsis/portable, macOS dmg, Linux
-AppImage). Run `npm run build:viewer` after changing root `src/` to re-sync
+(`npm run viewer:dist`; targets Windows nsis/portable, macOS dmg, Linux AppImage).
+**macOS cannot be built on Windows or Linux** — electron-builder throws
+`Build for macOS is supported only on macOS` for a macOS target on a non-macOS
+host, with no flag to bypass it. Build it with
+`.github/workflows/release-macos.yml` instead.
+Run `npm run build:viewer` after changing root `src/` to re-sync
 `viewer/src/`. Keep the viewer's `src/` in sync with the root `src/`.
 
 ## Cross-platform
 
 This is a **cross-platform program**. The core CLI and the Electron viewer both
 run on Windows, macOS, and Linux from the same source. Windows is the primary
-tested target and the shipped `deployment/win/` distribution, but nothing in
-`src/` or `viewer/` is Windows-specific — the only platform-specific pieces are
-the Windows installer/batch scripts. When changing rendering or the viewer,
+tested target and the shipped distribution, but nothing in `src/` or `viewer/`
+is Windows-specific — the only platform-specific pieces are the Windows
+executable build and its batch wrapper. When changing rendering or the viewer,
 keep it portable and avoid Windows-only APIs (use `path`/`fs` cross-platform
 APIs, not `\\`-hardcoded separators).

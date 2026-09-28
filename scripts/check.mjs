@@ -6,15 +6,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const outDir = path.join(root, "dist", "out");
+const outDir = path.join(root, "out");
 
-// Guard: the three manifests must agree on the version. They have drifted
-// before (0.1.0 / 0.1.0 / 1.0.0), which silently mislabels release artifacts.
-const manifests = [
-  "package.json",
-  path.join("viewer", "package.json"),
-  path.join("deployment", "win", "package.json"),
-];
+// Guard: the manifests must agree on the version. They have drifted before
+// (0.1.0 / 0.1.0 / 1.0.0), which silently mislabels release artifacts.
+const manifests = ["package.json", path.join("viewer", "package.json")];
 const versions = manifests.map((rel) => [
   rel,
   JSON.parse(fs.readFileSync(path.join(root, rel), "utf8")).version,

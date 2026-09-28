@@ -1,0 +1,155 @@
+# Builds the macOS viewer for testers.
+#
+# Why a workflow at all: electron-builder refuses a macOS target on a non-macOS
+# host (app-builder-lib/out/packager.js throws "Build for macOS is supported
+# only on macOS"), so the .app cannot be produced from the Windows dev box. This
+# is the only supported way to get one.
+#
+# Deliberately UNSIGNED - no Apple Developer certificate is configured, so
+# there are no secrets to manage and the workflow runs on any fork. Testers
+# must bypass Gatekeeper once: right-click the app -> Open, or
+#   xattr -dr com.apple.quarantine "/Applications/Canvas Reader.app"
+# Signing and notarising need an Apple Developer account and a Mac, and are out
+# of scope for a tester build.
+
+name: release-macos
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # viewer/build/ is gitignored, so a fresh checkout has no icon at all and
+  # electron-builder would silently fall back to the default Electron icon. The
+  # icon is drawn by scripts/make-icon.ps1, which needs System.Drawing and so
+  # only runs on Windows - draw it here and hand it to the macOS job.
+  icon:
+    name: app icon
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Draw icon.png
+        shell: pwsh
+        run: ./scripts/make-icon.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: icon
+          path: viewer/build/icon.png
+          if-no-files-found: error
+
+  viewer:
+    name: macOS viewer (${{ matrix.arch }})
+    needs: icon
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Only x64 is smoke-tested: the packaged binary cannot be run from the
+          # Windows dev box at all, so this is the one place it gets verified.
+          - arch: x64
+            smoke: true
+          - arch: arm64
+            smoke: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: icon
+          path: viewer/build
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Root first: `npm ci` runs `prepare`, which regenerates
+      # src/styles.generated.mjs from the Mantine CSS in root node_modules.
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix viewer ci
+
+      # electron-builder's appDir is viewer/ and cannot reach the repo root, so
+      # viewer/src/ and viewer/LICENSE must be staged before packaging.
+      - name: Sync viewer/src and stage viewer/LICENSE
+        run: npm run build:viewer
+
+      - name: Package (unsigned)
+        run: npm --prefix viewer run dist:mac -- --${{ matrix.arch }}
+
+      # esbuild ships a per-platform native binary and `npm ci` only installed the
+      # one matching the runner. If this build did not also pull in
+      # @esbuild/darwin-<arch>, the app fails at runtime the first time it
+      # bundles a canvas - and the arm64 job is not smoke-tested, so nothing else
+      # would catch it.
+      - name: Assert this arch's esbuild binary is packaged
+        run: |
+          app="viewer/dist/mac/Canvas Reader.app"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            app="viewer/dist/mac-arm64/Canvas Reader.app"
+          fi
+          found=$(find "$app/Contents/Resources/app/node_modules/@esbuild" \
+            -name esbuild -type f 2>/dev/null)
+          if [ -z "$found" ]; then
+            echo "no esbuild binary packaged under $app"
+            ls -R "$app/Contents/Resources/app/node_modules/@esbuild" || true
+            exit 1
+          fi
+          echo "packaged: $found"
+
+      # `--smoke` renders the synthetic fixture headlessly and exits, which is
+      # how a packaged build is verified without the GUI.
+      - name: Smoke-test the packaged app
+        if: matrix.smoke
+        run: |
+          app="viewer/dist/mac/Canvas Reader.app"
+          if [ ! -d "$app" ]; then
+            echo "expected $app to exist"
+            ls -la viewer/dist
+            exit 1
+          fi
+          "$app/Contents/MacOS/tsx-reader-export-viewer" \
+            --smoke testcases/example.canvas.tsx
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tsx-reader-export-viewer-${{ matrix.arch }}-mac
+          path: |
+            viewer/dist/mac*/Canvas Reader.app
+            viewer/dist/*.dmg
+            viewer/dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: publish to the GitHub release
+    needs: viewer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: tsx-reader-export-viewer-*-mac
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          mapfile -t files < <(find artifacts \( -name '*.dmg' -o -name '*.zip' \))
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no .dmg/.zip artifacts to attach"
+            exit 1
+          fi
+          echo "attaching ${#files[@]} file(s) to $tag"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" "${files[@]}" \
+              --title "$tag" \
+              --notes "Unsigned macOS tester build of Canvas Reader. Gatekeeper warns on first launch: right-click the app and choose Open, or run: xattr -dr com.apple.quarantine '/Applications/Canvas Reader.app'"
+          fi

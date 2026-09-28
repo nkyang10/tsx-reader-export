@@ -5,19 +5,17 @@ node_modules/
 # GENERATED FILES - never commit these. They are rebuilt by the scripts below.
 #   npm run embed-styles   -> src/styles.generated.mjs
 #   npm run build:viewer   -> viewer/src/
-#   npm run build:deploy   -> deployment/win/src/ + testcases/
 # `npm install` runs `prepare`, which regenerates src/styles.generated.mjs.
 # ---------------------------------------------------------------------------
 src/styles.generated.mjs
 viewer/src/
-deployment/win/src/
-deployment/win/testcases/
 
 # Build output
-dist/
-out/
+# release/ is BOTH the shipped artifact and where build:exe writes the CLI
+# (release\cli\), so there is no separate staging tree to ignore.
 release/
 .release-zip/
+out/
 *.zip
 viewer/dist/
 .sea-build/
@@ -37,6 +35,7 @@ docs/assets/
 
 # Runtime temp (bundled canvases)
 .tsx-reader-export-tmp/
+.viewer-capture-tmp/
 
 # Secrets - never commit API keys / tokens
 .env

@@ -1,18 +1,33 @@
 // Assemble both Windows executables into one release folder:
 //
 //   release/
-//     tsx-reader-export-viewer/       <- unpacked Electron app: no install, instant start
-//       tsx-reader-export-viewer.exe
-//     tsx-reader-export.exe            <- CLI (Node SEA) + node_modules\ + shim
-//     run-cli.bat
-//     README.txt
+//     tsx-reader-export-viewer.exe     <- the reader, at the top level
+//     locales\ resources\ *.pak *.dll  <- its Electron runtime, must sit beside it
+//     cli\                             <- the command line converter
+//       tsx-reader-export.exe
+//       node_modules\  cursor-canvas.compat.mjs  run-cli.bat
+//     LICENSE  README.txt
+//
+// The reader is the product, so it is the thing you double-click: its exe is at
+// the top level. An unpacked Electron app cannot be a single file though - it
+// needs locales\, resources\ and the *.pak/*.dll siblings in the same directory -
+// so those live at the top level too. The CLI is the secondary entry point and
+// takes the one subfolder, release\cli\. Nothing in the CLI resolves paths
+// outside its own folder (src/cli-exe.mjs derives everything from
+// process.execPath), so it is self-contained there.
 //
 // Both targets run without installing anything. The viewer is shipped
 // UNPACKED rather than as a single "portable" exe on purpose: the portable
 // target re-extracts ~200 MB on every launch (measured 23s to window) whereas
 // the unpacked folder starts in ~0.3s.
 //
-// Pass --no-build to re-assemble from existing build output.
+// release\cli\ is built IN PLACE by scripts/build-cli-exe.mjs. There used to be
+// a dist\exe\ staging copy that this script then moved across - a second 130 MB
+// tree on disk and a full copy of ~13,000 files per release build. The only
+// thing copied now is the viewer's unpacked build.
+//
+// Pass --no-build to re-assemble the viewer side from existing build output,
+// keeping the release\cli\ that is already there.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,6 +45,8 @@ function run(cmd, args, cwd) {
 }
 
 if (!noBuild) {
+  // The CLI is built straight into release\cli\ - there is no staging copy.
+  // scripts/build-cli-exe.mjs wipes and rebuilds that folder itself.
   console.log("==> Building CLI executable (Node SEA)...");
   run(process.execPath, [path.join(root, "scripts", "build-cli-exe.mjs")], root);
 
@@ -62,39 +79,44 @@ if (!noBuild) {
   run(eb.cmd, [...eb.args, "--win", "dir", "--x64"], viewer);
 }
 
-fs.rmSync(release, { recursive: true, force: true });
+// Clear the release root but KEEP release\cli\. The CLI is built in place, so a
+// full `rm -rf release` would throw away the executable it just built; a
+// --no-build re-assemble has to keep the one it already has.
 fs.mkdirSync(release, { recursive: true });
-
-// --- CLI: copy the whole dist/exe folder (exe + node_modules + shim + bat) ---
-const cliSrc = path.join(root, "dist", "exe");
-if (!fs.existsSync(path.join(cliSrc, "tsx-reader-export.exe"))) {
-  throw new Error("CLI exe missing. Run without --no-build.");
+for (const entry of fs.readdirSync(release)) {
+  if (entry === "cli") continue;
+  fs.rmSync(path.join(release, entry), { recursive: true, force: true });
 }
-fs.cpSync(cliSrc, release, {
-  recursive: true,
-  filter: (src) => {
-    const rel = path.relative(cliSrc, src);
-    // Skip build leftovers; keep node_modules, exe, bat, shim, README.
-    return !rel.startsWith("logs") && !rel.startsWith("out") && !rel.startsWith(".tmp");
-  },
-});
+if (!fs.existsSync(path.join(release, "cli", "tsx-reader-export.exe"))) {
+  throw new Error(
+    "release\\cli\\tsx-reader-export.exe missing. Run without --no-build."
+  );
+}
 
-// --- Viewer: copy the unpacked build as a folder (fast, no install) ---
+// --- Reader: flatten the unpacked build into release/ (fast, no install) ---
+// The exe must sit beside locales\ and resources\, so its contents go to the
+// top level rather than into a subfolder of its own.
 const unpacked = path.join(root, "viewer", "dist", "win-unpacked");
 if (!fs.existsSync(unpacked)) {
   throw new Error("Viewer build missing. Run without --no-build.");
 }
-const viewerDir = path.join(release, "tsx-reader-export-viewer");
-fs.cpSync(unpacked, viewerDir, { recursive: true });
+for (const entry of fs.readdirSync(unpacked, { withFileTypes: true })) {
+  fs.cpSync(path.join(unpacked, entry.name), path.join(release, entry.name), {
+    recursive: true,
+  });
+}
 // Windows marks extracted .exe files as "blocked" (Zone.Identifier) after being
-// copied from a build output; clear it so the app starts without a prompt.
+// copied from a build output; clear it so the app starts without a prompt. It
+// runs over the whole release tree now, which includes release\cli\ - harmless,
+// since those files are built locally and carry no Zone.Identifier to begin
+// with, and Unblock-File is a metadata-only change.
 try {
   execFileSync(
     "powershell",
     [
       "-NoProfile",
       "-Command",
-      `Get-ChildItem -LiteralPath '${viewerDir}' -Recurse -File | Unblock-File -ErrorAction SilentlyContinue`,
+      `Get-ChildItem -LiteralPath '${release}' -Recurse -File | Unblock-File -ErrorAction SilentlyContinue`,
     ],
     { stdio: "ignore" }
   );
@@ -115,22 +137,24 @@ fs.writeFileSync(
     "",
     "Two programs. NEITHER requires an installer, and neither needs Node.js.",
     "",
-    "1) tsx-reader-export-viewer\\  - Canvas Reader, the GUI",
-    "     Double-click  tsx-reader-export-viewer\\tsx-reader-export-viewer.exe",
+    "1) tsx-reader-export-viewer.exe  - Canvas Reader, the app",
+    "     Double-click it. It is right here, at the top level.",
     "     Open a Cursor canvas .tsx, preview it, Save as HTML, or Print/PDF",
     "     via the Windows print dialog.",
-    "     This is an unpacked app folder, so it starts immediately (~0.2s).",
-    "     Keep the whole folder together.",
+    "     It starts immediately (~0.2s). Keep this whole folder together: the",
+    "     locales\\, resources\\ and *.pak / *.dll files beside the exe are its",
+    "     runtime, not clutter.",
     "     Log: %APPDATA%\\tsx-reader-export-viewer\\viewer.log",
     "",
-    "2) tsx-reader-export.exe      - the command line converter",
-    "       tsx-reader-export.exe my.canvas.tsx out.html",
-    "       tsx-reader-export.exe my.canvas.tsx out.html --title \"My Page\"",
-    "       tsx-reader-export.exe my.canvas.tsx out.html --color-scheme dark",
-    "     KEEP tsx-reader-export.exe and the node_modules\\ folder together - the",
-    "     executable embeds Node but loads React and the cursor/canvas shim",
-    "     from that folder.",
-    "     Log: logs\\tsx-reader-export.log   (add --verbose for console output)",
+    "2) cli\\                          - the command line converter",
+    "       cli\\tsx-reader-export.exe my.canvas.tsx out.html",
+    "       cli\\tsx-reader-export.exe my.canvas.tsx out.html --title \"My Page\"",
+    "       cli\\tsx-reader-export.exe my.canvas.tsx out.html --color-scheme dark",
+    "     cli\\run-cli.bat takes the same arguments if you want a console window",
+    "     that stays open. Prefer the app above unless you are scripting.",
+    "     KEEP the whole cli\\ folder together - the executable embeds Node but",
+    "     loads React and the cursor/canvas shim from its node_modules\\.",
+    "     Log: cli\\logs\\tsx-reader-export.log  (add --verbose for console output)",
     "",
     "The HTML output is fully self-contained: all CSS is inlined and there are",
     "no external stylesheet links, so the file works offline.",
@@ -142,6 +166,12 @@ fs.writeFileSync(
   ].join("\r\n"),
   "utf8"
 );
+
+// MIT requires our own notice to travel with our code. The app carries a copy
+// inside resources\app\, but the top level of the zip should show it too - that
+// is where the reader's exe lives, and the Electron runtime around it carries
+// only Chromium's own notices.
+fs.copyFileSync(path.join(root, "LICENSE"), path.join(release, "LICENSE"));
 
 function fileSize(p) {
   return (fs.statSync(p).size / (1024 * 1024)).toFixed(1);

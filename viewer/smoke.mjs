@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const canvas = process.argv[2]
   ? path.resolve(process.argv[2])
   : path.resolve(__dirname, "..", "testcases", "example.canvas.tsx");
-const outDir = path.resolve(__dirname, "..", "dist", "smoke");
+const outDir = path.resolve(__dirname, "..", "out", "smoke");
 fs.mkdirSync(outDir, { recursive: true });
 
 app.whenReady().then(async () => {

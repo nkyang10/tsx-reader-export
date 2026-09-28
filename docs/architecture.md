@@ -48,7 +48,7 @@ One rendering core, four ways to reach it:
 | Entry | File | Used by |
 |---|---|---|
 | CLI (ESM) | `src/cli.mjs` | `npm run tsx-reader-export`, the repo itself |
-| CLI (exe) | `src/cli-exe.mjs` | `dist/exe/tsx-reader-export.exe` — Node SEA build |
+| CLI (exe) | `src/cli-exe.mjs` | `release/cli/tsx-reader-export.exe` — Node SEA build |
 | Viewer | `viewer/main.mjs` | the Electron app; imports the same `core.mjs` |
 | Smoke | `viewer/smoke.mjs` | headless verification of the viewer |
 
@@ -64,17 +64,16 @@ One rendering core, four ways to reach it:
   component tree"*.
 - `shimPath` / `tmpDir` — let a packaged host point at its own real paths.
 
-## Why some things are duplicated on disk
+## Why `src/` is duplicated into `viewer/src/`
 
-`src/` is the single source of truth. Two build steps copy it:
+`src/` is the single source of truth. One build step copies it:
 
 ```
-npm run build:viewer   src/ -> viewer/src/          (needed by electron-builder)
-npm run build:deploy   src/ -> deployment/win/src/  (deployment must stand alone)
+npm run build:viewer   src/ -> viewer/src/   (needed by electron-builder)
 ```
 
-Both destinations are **gitignored build artifacts**, not tracked copies. The
-copies exist because of two hard constraints:
+The destination is a **gitignored build artifact**, not a tracked copy. It
+exists because of two hard constraints:
 
 1. **electron-builder packages from its own root.** It will not reach into
    `../src`, and it prunes anything it cannot see in the dependency graph.
@@ -97,12 +96,43 @@ to any future peer dependency the renderer touches.
 
 ```
 release/
-  tsx-reader-export-viewer/      unpacked Electron app - no install, ~0.2s start
-  tsx-reader-export.exe          CLI (Node SEA)
-  node_modules/         required beside tsx-reader-export.exe
-  cursor-canvas.compat.mjs
-  run-cli.bat
+  tsx-reader-export-viewer.exe  Canvas Reader, the app - double-click this
+  locales/  resources/  *.pak  *.dll   its unpacked Electron runtime
+  cli/
+    tsx-reader-export.exe       CLI (Node SEA)
+    node_modules/               required beside tsx-reader-export.exe
+    cursor-canvas.compat.mjs
+    run-cli.bat
+  LICENSE  README.txt
 ```
+
+**Why the reader is at the top level and the CLI is not.** The reader is the
+product, so its exe is what you open. An unpacked Electron app cannot be a
+single file: it resolves `locales/`, `resources/` and the `*.pak`/`*.dll`
+siblings relative to the exe, so those have to sit at the top level too. The
+root therefore looks busy — that is Electron's runtime, not clutter. The CLI is
+the secondary entry point, so it takes the one subfolder. It resolves nothing
+outside its own directory (`src/cli-exe.mjs` derives every path from
+`process.execPath`), so it is self-contained there.
+
+**Why `release/cli/` is built in place, with no staging copy.** `build:exe`
+writes straight to `release/cli/`, and `build:release` wipes everything in
+`release/` *except* that folder before laying the viewer in beside it. There
+used to be a `dist/exe/` that `build:release` then copied across — a second
+130 MB tree on disk and a full copy of ~13,000 files per release build, for no
+benefit. There is now no `dist/` at all: `out/` is scratch, `release/` ships.
+
+**Why the shipped `node_modules/` is production-only.** Copying the dev
+`node_modules` into `release/cli/` also shipped `typescript` (22.5 MB),
+`postject` (4.6 MB, the tool that injects the SEA blob) and `@types/node` —
+**30.4 MB, 42% of the folder**, none of which the exe ever loads.
+`scripts/build-cli-exe.mjs` now runs `npm ci --omit=dev` into a staging folder
+and moves the result into place, so npm — not a hand-maintained delete list —
+decides what is dev-only, and it stays correct when a devDependency is added.
+`--ignore-scripts` is safe because the only postinstall in the production
+closure is esbuild's, which merely validates the binary that already ships as
+an optionalDependency. electron-builder was already doing this for the viewer;
+the CLI was the one place that had not caught up.
 
 **Why the viewer is unpacked, not a single "portable" exe.** The `portable`
 target is a self-extracting archive: it unpacks ~200 MB into a fresh `%TEMP%`
@@ -117,6 +147,40 @@ modules, so `react`, the shim and esbuild's native binary must exist on disk.
 The win over the old `run.bat` + portable-Node flow is that no Node install
 step is required; the cost is a sibling `node_modules/` folder.
 
+## macOS is built in CI, not on the dev box
+
+electron-builder **refuses** a macOS target on a non-macOS host.
+`app-builder-lib/out/packager.js` throws `Build for macOS is supported only on
+macOS` when the target platform is `mac` and the host is `win32`, and the check
+is unconditional — no flag or environment variable bypasses it. It is also not
+worth patching around: `app-builder-bin` ships only the binary for the *host*
+platform, so the darwin `app-builder` a Windows box would have to exec is not on
+disk, and the mac-specific steps (icns, plist, dmg) shell out to macOS tooling.
+
+`.github/workflows/release-macos.yml` therefore builds it on `macos-latest`
+(tag push `v*`, or manual dispatch). Two consequences shape the workflow:
+
+- **The icon is generated on a Windows job.** `viewer/build/` is gitignored, so
+  a clean checkout has no `icon.png`; electron-builder would only warn and fall
+  back to the default Electron icon, producing a build that succeeds and looks
+  wrong. `scripts/make-icon.ps1` cannot move to macOS — it draws with
+  `System.Drawing`, which is Windows-only and unavailable to `pwsh` on macOS —
+  so a `windows-latest` job runs it and uploads the PNG for the macOS job.
+- **The build is unsigned**, by choice: no Apple Developer certificate means no
+  secrets, so it runs on a fork. `mac.identity: null` also stops electron-builder
+  auto-discovering a keychain certificate, which would otherwise make a local mac
+  build differ from the CI one. Testers clear Gatekeeper once by hand.
+
+The x64 job then runs `--smoke` on the packaged app, so the packaged mac build is
+rendered once on a real Mac using the synthetic fixture. That catches packaging
+failures — the missing-peer-dependency class of bug in "Why some things are
+duplicated on disk" — and is *not* a substitute for testing on real Apple
+hardware. The arm64 job is not smoke-tested: the runner is x64.
+
+There is no macOS CLI artifact. The `.exe` is a Node SEA build, which is
+Windows-only; a mac user runs the viewer, or the CLI from source with
+`node src/cli.mjs`.
+
 ## Generated vs committed
 
 Committed: hand-written source, manifests, lockfiles, docs, testcases.
@@ -127,16 +191,16 @@ Generated (gitignored, rebuilt):
 |---|---|
 | `src/styles.generated.mjs` | `npm run embed-styles` (also runs on `npm install` via `prepare`) |
 | `viewer/src/` | `npm run build:viewer` |
-| `deployment/win/src/`, `deployment/win/testcases/` | `npm run build:deploy` |
 | `viewer/build/icon.png` | `powershell -File scripts/make-icon.ps1` |
-| `dist/`, `release/`, `viewer/dist/` | the `build:*` scripts |
+| `release/`, `viewer/dist/` | the `build:*` scripts |
+| `out/` (scratch) | `npm run check`, the smoke test, `npm run capture -- --pdf` |
 
 After a fresh clone:
 
 ```bash
 npm install          # prepare -> generates src/styles.generated.mjs
 npm run check        # render every fixture
-npm run sync         # viewer/src + deployment/win/src
+npm run sync         # viewer/src
 ```
 
 ## Diagnostics
@@ -145,7 +209,7 @@ Packaged GUI apps show no console, so both write a detailed log.
 
 | App | Log |
 |---|---|
-| CLI exe | `dist/exe/logs/tsx-reader-export.log` (falls back to `%TEMP%`) |
+| CLI exe | `release\cli\logs\tsx-reader-export.log` (falls back to `%TEMP%`) |
 | Viewer | `%APPDATA%\tsx-reader-export-viewer\viewer.log` |
 
 Logs record argv, cwd, executable path, Node/Electron versions, the resolved

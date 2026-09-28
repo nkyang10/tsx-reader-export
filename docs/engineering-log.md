@@ -5,6 +5,232 @@ Append every significant change here with a date and the rationale (rule #6 in
 
 ---
 
+## 2026-09-28 — The reader moves to the top level of the release
+
+**What was asked**
+
+Two things. First, whether `run-cli.bat` and `tsx-reader-export.exe` are
+interchangeable — they are: the bat is a five-line wrapper that `cd`s to its own
+folder, echoes a banner, calls the exe with `%*` verbatim, prints the exit code
+and the log path, and `pause`s so the window does not vanish. Same flags, same
+behaviour; the bat just keeps a console on screen.
+
+Second, and the real point: **the reader is the product, so stop filing it away
+in a subfolder.** The Windows release had the CLI's files at the top level and
+the app buried in `tsx-reader-export-viewer\`, which is a hierarchy that says the
+command line is the product and the GUI is an accessory.
+
+**Decision**
+
+The reader's exe now sits at the top level of `release/` and the CLI takes the
+one subfolder, `release\cli\`. `dist/exe/` moves wholesale under it.
+
+**The cost, stated plainly**
+
+An unpacked Electron app cannot be a single file. It resolves `locales\`,
+`resources\` and a dozen `.pak`/`.dll` siblings relative to the exe, so the root
+of the zip now has 19 loose runtime files around `tsx-reader-export-viewer.exe`
+instead of one tidy folder. That is the trade: a readable root that says "this
+is the app", paid for with visual noise. The alternative — a single `portable`
+exe — was already measured and rejected: it re-extracts ~200 MB on *every*
+launch (23s to window, vs 0.2s unpacked), and `portable.unpackDirName` did not
+help. So "clean root" and "fast start" cannot both be had; fast start won, and
+the README now says plainly that the loose files are the runtime, not clutter.
+
+**Why the CLI relocated without a single code change**
+
+`src/cli-exe.mjs` derives every path from `process.execPath` (`EXE_DIR`) — the
+log, the scratch dir, the usage text — and the esbuild bundle resolves React and
+the shim from the `node_modules` beside the exe. Nothing reaches upward, so
+moving the folder as a unit is safe. The one thing that did need care is
+`Unblock-File`: it used to run against the viewer's subfolder, and it now runs
+against the release root *before* the CLI is copied, so it still only touches
+the reader's files and the CLI ships byte-identical to `dist/exe/`.
+
+Our MIT notice is copied to the release root explicitly now. It used to arrive
+there as a side effect of copying the CLI folder; with the CLI moved down a
+level, the top level would otherwise carry only Chromium's own
+`LICENSE.electron.txt` / `LICENSES.chromium.html`. The app still ships its own
+copy inside `resources\app\`.
+
+**Not changed**
+
+- The *source* layout. `viewer/` stays a subfolder of the repo: it is a separate
+  npm package with its own `package-lock.json`, its own `node_modules`, and
+  electron-builder's `appDir` cannot reach outside its root. Flattening it into
+  the repo root would mean one lockfile for the CLI and the app, and a much
+  larger diff across the build scripts, the CI workflow and `AGENTS.md`.
+- `docs/release-notes-1.0.0.md`. `v1.0.0` is tagged; its notes describe the zip
+  as it shipped. The layout change is recorded under `[Unreleased]` instead.
+
+**Verification**
+
+- `npm run check` — every fixture in `testcases/` renders.
+- `npm run build:release --no-build` re-assembles from the existing
+  `dist/exe/` and `viewer/dist/win-unpacked/`, and the printed inventory matches
+  the new tree.
+- `release\cli\tsx-reader-export.exe` converts a fixture from inside its new
+  subfolder, which is the real proof that the CLI resolves nothing above itself.
+- `release\tsx-reader-export-viewer.exe --smoke <fixture>` renders headlessly
+  from the new top level.
+
+---
+
+## 2026-09-28 — Stop shipping the dev toolchain; collapse the duplicate output trees
+
+Follow-on from promoting the reader to the top of the release. Two questions got
+asked in the same sitting: *are all these files necessary?* and *is anything
+duplicated?* Both turned out to be yes, and the answers were not the ones I
+expected.
+
+### 1. The CLI shipped its own build tools to end users
+
+`cli\node_modules` was **72.1 MB — the exact size of the dev `node_modules`**,
+because `scripts/build-cli-exe.mjs` did `cpSync(root/node_modules, outDir/…)`.
+So the user's download contained:
+
+| package | size | why it was there |
+|---|---|---|
+| `typescript` | 22.5 MB | `devDependencies`, for `npm run typecheck` |
+| `postject` + `commander` | 4.8 MB | the tool that injects the SEA blob |
+| `@types/*` | 3.2 MB | type declarations |
+| `undici-types`, `.bin` | 0.1 MB | transitive |
+
+**30.4 MB — 42% of the folder — that the exe never loads.** The giveaway is
+that electron-builder was already doing the right thing for the viewer: its
+pruned tree is 38.3 MB against this one's 72.1 MB. The CLI was the one place
+that never caught up.
+
+**Fix:** `npm ci --omit=dev --ignore-scripts` into a staging folder, then
+`rename` the result into place. 72.1 → 42.3 MB. Deliberately *not* a delete list
+of known dev packages: a hand-maintained list is silently wrong the day someone
+adds a devDependency, and npm already knows the answer. The build now throws if
+`typescript`, `postject` or `@types/node` shows up in the output.
+
+`--ignore-scripts` is load-bearing and worth explaining. The only postinstall in
+the production closure is esbuild's, and all it does is validate the binary that
+already ships as an optionalDependency (`@esbuild/win32-x64`) — so skipping it
+costs nothing. It also stops npm from running *this package's* `prepare`
+(`embed-styles`) inside the staging dir, which has no `scripts/` to run it from.
+`--prefer-offline` keeps the build working once the npm cache is warm. I checked
+the lockfile first: npm already filters optional platform packages to
+`win32-x64`, so a production install does not drag in all 25 esbuild binaries.
+
+### 2. Two 100% duplicate trees
+
+`dist\exe` measured **131.9 MB — byte-for-byte the same size as `release\cli`**.
+It existed only so `build:release` could copy it across. So the repo held the
+same 13,000 files twice and copied all of them on every release build.
+
+`build:exe` now takes `--out <dir>` and defaults to `release\cli\`.
+`build:release` wipes everything in `release/` **except** `cli\` before laying the
+viewer in beside it — a blanket `rm -rf release` would destroy the executable it
+had just built, and the `--no-build` re-assemble path has to keep the one it
+already has. `dist/` does not exist any more.
+
+### 3. A third way to ship the same CLI
+
+`deployment/win/` shipped the CLI as **source** plus an `install.ps1` that
+downloaded a portable Node.js into `./node` and ran `npm ci`. The SEA exe
+produces byte-identical output with no Node, no install step and no network, so
+this was strictly the worse mechanism — while costing a 5th tracked file set, a
+`package.json`/`package-lock.json` pair to keep in sync forever, its own
+`npm run build:deploy`, and a whole `AGENTS.md` section. Deleted, along with
+`scripts/build-deploy.mjs`.
+
+The honest counter-argument: it is the only distribution with **no compiled
+binary**, so it is reviewable and runs on any Node 18+. Worth keeping only if
+someone actually needs that; it was not being maintained as a first-class path
+either.
+
+### Two output folders, one rule
+
+`out/` is scratch, `release/` ships. `npm run check` renders to `out/`, the
+smoke test screenshots to `out/smoke/`, `npm run capture -- --pdf` writes
+`out/sample-output.pdf`. That is the whole vocabulary — no `dist/`, no staging
+tree. `release/` is both "where the build happens" and "what you ship", which
+is a little odd but strictly better than paying 130 MB to keep two copies of one
+artifact in sync.
+
+**Result:** release 468.2 MB → 438.4 MB, and the repo has one fewer output
+folder, one fewer distribution model, and one fewer full-tree copy per release.
+
+**Verification**
+
+- `npm run build:release` from an empty tree: both artifacts, `dist/` never
+  created, CLI at 131.9 MB.
+- `npm run build:release --no-build` re-assembles the viewer and **keeps**
+  `release\cli\`.
+- `release\cli\tsx-reader-export.exe` converts the fixture → 246,702 bytes,
+  unchanged, with the production-only tree.
+- `release\tsx-reader-export-viewer.exe --smoke` → 246,704 chars.
+- `npm run check`, `npm run sync` (now just `build:viewer`) both pass.
+
+---
+
+## 2026-09-27 — Build the macOS viewer from CI
+
+**Why a workflow**
+
+Wanted an untested macOS build for a few people to try. electron-builder
+**cannot** cross-build it from Windows: `app-builder-lib/out/packager.js`
+throws `Build for macOS is supported only on macOS` whenever the target platform
+is `mac` and the host is `win32`, and the check is unconditional — no flag and
+no environment variable bypasses it. Patching the throw is not an option
+either, because `app-builder-bin` only ships the binary for the *host* platform,
+so the darwin `app-builder` this machine would have to exec is not even on disk.
+
+So a macOS runner is the only supported route. Added
+`.github/workflows/release-macos.yml` (tag push `v*`, or manual dispatch). The
+repository is public, so the runner is free.
+
+**Unsigned, deliberately**
+
+No Apple Developer certificate is configured, which means the workflow needs no
+secrets at all and runs on a fork. Testers get Gatekeeper's warning and have to
+clear it once — right-click the app → Open, or
+`xattr -dr com.apple.quarantine "/Applications/Canvas Reader.app"`. Signing and
+notarising need both an Apple account and a Mac, and are out of scope for a
+tester build. `mac.identity: null` is set explicitly so that a mac dev with a
+certificate in their keychain does not silently produce a *differently signed*
+build from the CI one.
+
+The zip target now ships next to the dmg: someone who cannot get past Gatekeeper
+on the dmg can drag the app out of the archive instead.
+
+**The icon trap**
+
+`viewer/build/` is gitignored, so a clean CI checkout has **no** `icon.png`, and
+electron-builder only warns and falls back to the default Electron icon — the
+build would have succeeded and looked wrong. Worse, `scripts/make-icon.ps1`
+cannot be moved to the macOS runner: it draws with `System.Drawing`, which is
+Windows-only, and `pwsh` on macOS cannot load that assembly. So the workflow has
+a `windows-latest` `icon` job that runs the existing script and uploads the PNG,
+which the macOS job downloads into `viewer/build/`. The icon stays uncommitted
+and rule 2 is intact.
+
+**Verification is partial, on purpose**
+
+The x64 job runs `Canvas Reader.app/Contents/MacOS/tsx-reader-export-viewer
+--smoke testcases/example.canvas.tsx` after packaging, so the packaged mac build
+is at least rendered once on a real Mac — using the synthetic fixture, per rule
+12. The arm64 job is not smoke-tested, because the runner is x64 and arm64 would
+need Rosetta. This does not replace testing on real Apple hardware: it catches
+packaging failures (the missing-peer-dependency class of bug) and nothing more.
+
+**Naming**
+
+`mac.artifactName` was unset, so the artifacts would have been named after
+`productName` — putting the display name "Canvas Reader" in a filename. Now
+`${name}-${version}-mac-${arch}.${ext}`, matching the `win` block, so the
+keyname is what lands on disk.
+
+**Not done:** the CLI has no macOS artifact. The Windows `.exe` is a Node SEA
+build, which is Windows-only, so a mac tester uses the viewer, or runs the CLI
+from source with `node src/cli.mjs`.
+
+---
+
 ## 2026-09-26 — Unify the product name and finish the data purge
 
 **Product name**
