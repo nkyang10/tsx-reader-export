@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A Theme control in the viewer** (`Light` / `Dark` / `Match system`), so the
+  canvas can be previewed, saved and printed in the theme it was drawn in. The
+  choice is remembered between sessions. Switching it re-renders rather than
+  restyles, because the shim's token palette is baked into the HTML at render
+  time — the control sends the scheme to the render, it does not toggle a class
+  on the iframe.
+
+### Fixed
+
+- **The exported page's background is no longer black on dark-mode readers.**
+  The export never stamped `data-mantine-color-scheme` onto `<html>`, which is
+  where Mantine resolves *every* design token. With the attribute missing,
+  `--mantine-color-body` was undefined, `body`'s `background-color` collapsed to
+  transparent, and the page canvas was painted by the browser from Mantine's
+  `color-scheme: light dark` — black for anyone whose OS is in dark mode. The
+  chosen scheme is now written to the attribute and to a `<meta name="color-scheme">`,
+  so the same HTML is white on a light machine and on a dark one. This also
+  makes `--color-scheme` actually do something: it was a no-op before.
+  - `auto` bakes in `light` (so the page is readable with scripting off) and
+    upgrades to `dark` via a two-line inline script when the reader's OS asks
+    for it.
+  - An unrecognised value now fails with
+    `Invalid color scheme: <v>. Expected one of: light, dark, auto.` instead of
+    being passed through to Mantine.
+
 ## [1.1.0] - 2026-09-28
 
 The reader is the product, and the download now says so: it is the exe at the

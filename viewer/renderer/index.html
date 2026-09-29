@@ -47,6 +47,21 @@
     color: #fff;
   }
   button.primary:hover { background: #2e76ab; }
+  select {
+    font: inherit;
+    padding: 5px 8px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    background: #fff;
+    color: #141414;
+    cursor: pointer;
+  }
+  .scheme {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #555;
+  }
   #status {
     padding: 8px 12px;
     font-size: 13px;
@@ -64,7 +79,7 @@
     color: #888;
     font-size: 15px;
   }
-  iframe { flex: 1; border: 0; background: #fff; display: none; }
+  iframe { flex: 1; border: 0; background: transparent; display: none; }
   iframe.visible { display: block; }
 </style>
 </head>
@@ -73,6 +88,14 @@
     <button class="primary" id="btn-open">Open .tsx</button>
     <button id="btn-save" disabled>Save as HTML</button>
     <button id="btn-print" disabled>Print / PDF</button>
+    <label class="scheme" title="Color scheme of the canvas. The tokens are baked in at render time, so switching this re-renders.">
+      Theme
+      <select id="scheme">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="auto">Match system</option>
+      </select>
+    </label>
     <span class="spacer"></span>
     <span class="file" id="file">No file open</span>
   </header>
@@ -84,17 +107,31 @@
 const $ = (id) => document.getElementById(id);
 let lastHtml = null;
 
+// Where the currently-previewed canvas came from, so a theme change can
+// re-render it without asking the user to open the file again.
+let source = null; // { kind: "path", path } | { kind: "drop", name, text }
+
+const SCHEME_LABEL = { light: "Light", dark: "Dark", auto: "Match system" };
+let scheme = localStorage.getItem("canvasReader.colorScheme") || "light";
+$("scheme").value = scheme;
+
 function setStatus(msg, isError) {
   const el = $("status");
   el.textContent = msg;
   el.classList.toggle("error", !!isError);
 }
 
-async function loadFile(filePath) {
-  setStatus("Rendering " + filePath + " ...");
+const sourceName = () => (source.kind === "path" ? source.path : source.name);
+
+async function render() {
+  setStatus("Rendering " + sourceName() + " (" + SCHEME_LABEL[scheme] + ") ...");
   try {
-    const html = await window.viewer.renderPath(filePath);
-    showPreview(html, filePath);
+    const opts = { colorScheme: scheme };
+    const html =
+      source.kind === "path"
+        ? await window.viewer.renderPath(source.path, opts)
+        : await window.viewer.renderSource(source.name, source.text, opts);
+    showPreview(html, sourceName());
   } catch (e) {
     setStatus("Failed: " + (e && e.message ? e.message : e), true);
   }
@@ -109,7 +146,7 @@ function showPreview(html, filePath) {
   $("file").textContent = filePath;
   $("btn-save").disabled = false;
   $("btn-print").disabled = false;
-  setStatus("Loaded " + filePath);
+  setStatus("Loaded " + filePath + " (" + SCHEME_LABEL[scheme] + ")");
 }
 
 $("btn-open").addEventListener("click", async () => {
@@ -119,12 +156,14 @@ $("btn-open").addEventListener("click", async () => {
     return;
   }
   // Re-render in-process so the HTML is available for the inline preview.
-  try {
-    const html = await window.viewer.renderPath(res.path);
-    showPreview(html, res.path);
-  } catch (e) {
-    setStatus("Failed: " + (e && e.message ? e.message : e), true);
-  }
+  source = { kind: "path", path: res.path };
+  render();
+});
+
+$("scheme").addEventListener("change", (e) => {
+  scheme = e.target.value;
+  localStorage.setItem("canvasReader.colorScheme", scheme);
+  if (source) render();
 });
 
 $("btn-save").addEventListener("click", async () => {
@@ -145,11 +184,9 @@ document.addEventListener("drop", async (e) => {
   e.preventDefault();
   const f = e.dataTransfer.files && e.dataTransfer.files[0];
   if (!f) return;
-  setStatus("Rendering dropped " + f.name + " ...");
   try {
-    const text = await f.text();
-    const html = await window.viewer.renderSource(f.name, text);
-    showPreview(html, f.name);
+    source = { kind: "drop", name: f.name, text: await f.text() };
+    render();
   } catch (err) {
     setStatus("Failed: " + (err && err.message ? err.message : err), true);
   }

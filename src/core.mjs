@@ -83,18 +83,50 @@ export function escapeHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
+// Mantine resolves every design token from `[data-mantine-color-scheme='...']`
+// on the root element. Nothing in a server-rendered export sets that attribute,
+// so without it `--mantine-color-body` is undefined, `body`'s background falls
+// back to transparent and the UA paints the page canvas from
+// `color-scheme: light dark` - black on any dark-mode reader. Stamping the
+// attribute here is what makes the exported page's background deterministic.
+const SCHEMES = new Set(["light", "dark", "auto"]);
+
+function resolveColorScheme(scheme) {
+  const s = String(scheme || "light").toLowerCase();
+  if (!SCHEMES.has(s)) {
+    throw new Error(
+      `Invalid color scheme: ${scheme}. Expected one of: light, dark, auto.`
+    );
+  }
+  return s;
+}
+
+const FOLLOW_SYSTEM_SCRIPT = `
+// --color-scheme auto: follow the reader's OS preference. Light is baked in
+// above so the page stays readable if this script never runs.
+if (matchMedia("(prefers-color-scheme: dark)").matches) {
+  document.documentElement.setAttribute("data-mantine-color-scheme", "dark");
+}
+`;
+
 export function buildHtml({
   title,
   markup,
   styles,
   extraHead = "",
   lang = "en",
+  colorScheme = "light",
+  followSystemColorScheme = false,
 }) {
+  const scheme = followSystemColorScheme ? "light dark" : colorScheme;
   return `<!DOCTYPE html>
-<html lang="${escapeHtml(lang)}">
+<html lang="${escapeHtml(lang)}" data-mantine-color-scheme="${escapeHtml(
+    colorScheme
+  )}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="${escapeHtml(scheme)}">
 <title>${escapeHtml(title)}</title>
 ${extraHead}
 <style>${styles}</style>
@@ -103,7 +135,9 @@ ${extraHead}
 <div id="root">${markup}</div>
 <script>
 // tsx-reader-export static export - interactive hydration not required.
-// The root div above contains fully-server-rendered markup.
+// The root div above contains fully-server-rendered markup.${
+      followSystemColorScheme ? FOLLOW_SYSTEM_SCRIPT : ""
+    }
 </script>
 </body>
 </html>`;
@@ -127,6 +161,9 @@ export async function renderCanvasToHtml(
     load,
     format,
   });
+  const requestedScheme = resolveColorScheme(colorScheme);
+  const autoScheme = requestedScheme === "auto";
+  const scheme = autoScheme ? "light" : requestedScheme;
   try {
     // A CommonJS bundle must be require()d (not import()ed) so that the host
     // and the canvas resolve the same CJS copies of react/mantine/shim.
@@ -144,7 +181,7 @@ export async function renderCanvasToHtml(
 
     const body = createElement(
       CanvasRoot,
-      { defaultColorScheme: colorScheme || "light" },
+      { defaultColorScheme: scheme },
       createElement(Component)
     );
     const markup = renderToStaticMarkup(body);
@@ -156,6 +193,8 @@ export async function renderCanvasToHtml(
       title: resolvedTitle,
       markup,
       styles,
+      colorScheme: scheme,
+      followSystemColorScheme: autoScheme,
     });
   } finally {
     try {

@@ -127,14 +127,17 @@ app.whenReady().then(() => {
   createWindow();
 
   // Render a .tsx canvas into a self-contained HTML string (reuses CLI core).
-  ipcMain.handle("viewer:renderPath", async (_e, filePath) => {
+  // `opts.colorScheme` picks the canvas theme; the shim bakes its token palette
+  // into the markup at render time, so switching it means re-rendering.
+  ipcMain.handle("viewer:renderPath", async (_e, filePath, opts) => {
     if (typeof filePath !== "string" || !filePath)
       throw new Error("No file path given.");
     const t0 = Date.now();
-    log("renderPath", filePath);
+    log("renderPath", filePath, safe(opts));
     try {
       const html = await renderCanvasToHtml(filePath, {
         title: titleFrom(filePath),
+        colorScheme: opts && opts.colorScheme,
         ...RENDER_OPTS,
       });
       log("renderPath ok", filePath, `${html.length} chars`, `${Date.now() - t0}ms`);
@@ -205,7 +208,7 @@ app.whenReady().then(() => {
   // Drag-and-drop: Electron 32+ removed File.path and webUtils is not present
   // in every supported build, so the renderer sends the file *contents* and we
   // render from a temp file instead of relying on a real filesystem path.
-  ipcMain.handle("viewer:renderSource", async (_e, name, text) => {
+  ipcMain.handle("viewer:renderSource", async (_e, name, text, opts) => {
     if (typeof text !== "string" || !text)
       throw new Error("Dropped file had no readable contents.");
     const safeName = String(name || "canvas.tsx").replace(/[^\w.\-]/g, "_");
@@ -214,11 +217,12 @@ app.whenReady().then(() => {
       `drop-${Date.now()}-${safeName}`
     );
     fs.mkdirSync(RENDER_OPTS.tmpDir, { recursive: true });
-    log("renderSource (dropped)", safeName, `${text.length} chars`);
+    log("renderSource (dropped)", safeName, `${text.length} chars`, safe(opts));
     await fs.promises.writeFile(tmp, text, "utf8");
     try {
       return await renderCanvasToHtml(tmp, {
         title: titleFrom(safeName),
+        colorScheme: opts && opts.colorScheme,
         ...RENDER_OPTS,
       });
     } catch (e) {

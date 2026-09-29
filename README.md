@@ -97,8 +97,15 @@ The CLI, if you want it, lives in the `cli\` subfolder.
 |---|---|
 | Open a canvas | **Open .tsx**, or just drag a `.tsx` onto the window |
 | See the result | it renders live in the window |
+| Match the theme you saw in Cursor | **Theme** — `Light`, `Dark`, or `Match system` |
 | Keep it | **Save as HTML** — writes a self-contained `.html` |
 | Print or make a PDF | **Print / PDF** — opens the Windows print dialog |
+
+A canvas `.tsx` does not record whether it was drawn in Cursor's light or dark
+theme — it reads its colours from the host theme at render time. So pick the
+scheme the canvas had in Cursor, and the reader reproduces it; the choice is
+remembered between sessions. Changing it re-renders (the tokens are baked into
+the HTML, not applied on top of it), which takes a moment.
 
 For PDF, pick **Microsoft Print to PDF** or **Save as PDF** in that dialog.
 The dialog is the OS one, so it also prints to a real printer, or to
@@ -130,7 +137,7 @@ cli\tsx-reader-export.exe my.canvas.tsx out.html
 |---|---|
 | `-o, --output <file>` | where to write the HTML (default: same name as the input) |
 | `--title <text>` | the page title (default: the input file's name) |
-| `--color-scheme <s>` | `light` or `dark` (default: `light`) |
+| `--color-scheme <s>` | `light`, `dark` or `auto` (default: `light`) |
 | `--verbose` | print progress to the console |
 | `-h, --help` | show help |
 

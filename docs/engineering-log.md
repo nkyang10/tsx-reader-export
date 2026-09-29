@@ -5,6 +5,135 @@ Append every significant change here with a date and the rationale (rule #6 in
 
 ---
 
+## 2026-09-29 — Stamp the color scheme onto the exported page
+
+**The report**
+
+"The result HTML bg is always black." It was not always — it was always black on
+a dark-mode machine, and always white on a light-mode one. Same file, same
+bytes, two backgrounds.
+
+**Cause**
+
+Mantine does not publish its tokens as plain values. Every colour is a
+`var(--mantine-*)` that is *defined* by a scheme-scoped block:
+
+```css
+:root[data-mantine-color-scheme='light'] { --mantine-color-body: var(--mantine-color-white); }
+:root[data-mantine-color-scheme='dark']  { --mantine-color-body: var(--mantine-color-dark-7); }
+```
+
+That attribute is set by `MantineProvider` in a **client** effect, or ahead of
+first paint by a `<ColorSchemeScript>` tag. Neither exists in a static export:
+`CanvasRoot` only forwards `defaultColorScheme` to the provider, and
+`renderToStaticMarkup` emits no `<html>` attributes at all. So the exported
+document had no `data-mantine-color-scheme`, `--mantine-color-body` was empty,
+and `body { background-color: var(--mantine-color-body) }` (inlined from
+`@mantine/core/styles.css`) fell back to `transparent`. What is left is the page
+canvas, which the UA paints per `color-scheme` — and Mantine's base `:root` sets
+`color-scheme: var(--mantine-color-scheme)` with `--mantine-color-scheme: light
+dark`. Hence: the OS decides.
+
+Confirmed in Electron before touching anything, by reading computed styles from
+the rendered file with `nativeTheme.themeSource` forced both ways:
+
+```
+dark  reader: schemeAttr=null  bodyBg=rgba(0, 0, 0, 0)  --mantine-color-body=""
+light reader: schemeAttr=null  bodyBg=rgba(0, 0, 0, 0)  --mantine-color-body=""
+```
+
+**The embarrassing part:** this made `--color-scheme` a documented, shipped flag
+(`light` | `dark`, README and both CLIs) that did nothing at all to the output.
+It only ever reached `MantineProvider`, whose value nothing consumed without the
+client effect. The flag and the bug are the same bug.
+
+**Fix** — `src/core.mjs`, in `buildHtml`:
+
+- stamp `data-mantine-color-scheme="<scheme>"` on `<html>`,
+- add `<meta name="color-scheme" content="...">` so the UA canvas agrees with
+  the tokens (this is the part that stops the black page even before a single
+  variable is consulted),
+- `renderCanvasToHtml` now normalises the flag: `light` | `dark` | `auto`,
+  default `light`, and passes it to both the provider and the document.
+
+`auto` needs a decision, because a static file has no host to ask. Baked `light`
+in, then a two-line inline script promotes it to `dark` when
+`prefers-color-scheme: dark` — i.e. the reader's OS. If scripting is off, the
+page stays light and readable rather than reverting to an undefined-variable
+black page. This mirrors what Mantine's own `ColorSchemeScript` does, minus the
+localStorage half, which has no meaning in a one-shot export.
+
+An unrecognised value now throws instead of being forwarded to Mantine, where it
+would have failed late and cryptically.
+
+**Verification** — computed styles from each export, read in Electron under both
+`nativeTheme.themeSource` values:
+
+| export | reader in dark mode | reader in light mode |
+|---|---|---|
+| (before) | `rgba(0, 0, 0, 0)` → black canvas | `rgba(0, 0, 0, 0)` → white canvas |
+| `--color-scheme dark` | `rgb(36, 36, 36)` | `rgb(36, 36, 36)` |
+| default / `light` | `rgb(255, 255, 255)` | `rgb(255, 255, 255)` |
+| `auto` | `rgb(36, 36, 36)` | `rgb(255, 255, 255)` |
+
+Text colour is now resolved too (`rgb(0, 0, 0)` / `rgb(201, 201, 201)` instead of
+whatever the UA defaulted to), so every Mantine component — borders, shadows,
+hover states, sticky table headers — stops falling back to canvas defaults.
+
+`npm run check` renders the fixture, `npm run sync` refreshes `viewer/src/`, and
+`npm run viewer:smoke` still passes. All three entry points (CLI, the SEA exe,
+the Electron viewer) go through `buildHtml`, so one fix covers them.
+
+**Lesson worth keeping:** an SSR export of a CSS-variable design system has to
+own the variables' *activation* state, not just its values. If the theme library
+sets them from a DOM attribute, the export is responsible for emitting that
+attribute — otherwise every `var()` is a silent no-op that happens to look
+plausible.
+
+**Then: the viewer got the same choice in its UI**
+
+Having proved the flag works, a reader who wants to reproduce a canvas they saw
+in dark Cursor had no way to express that without leaving the app for a terminal.
+The viewer already renders the same HTML in-process, so the missing piece was
+just somewhere to put the choice — plus the fact that **it is a re-render, not a
+restyle**:
+
+- `viewer/renderer/index.html` — a `Theme` `<select>` (`Light`, `Dark`, `Match
+  system`) in the header, default `light` (the CLI default; deterministic beats
+  surprising), persisted to `localStorage`. The renderer now remembers where the
+  previewed canvas came from — a path, or a dropped file's text — so a scheme
+  change re-renders it without asking the user to open the file again. Status
+  text names the active scheme, because the re-render is slow enough to need a
+  reason. The iframe's own `background: #fff` is gone (`transparent`), or a dark
+  canvas would sit in a white letterbox.
+- `viewer/main.mjs` + `preload.mjs` — `renderPath` / `renderSource` take
+  `{ colorScheme }` and forward it to the core, which is the only place that can
+  act on it.
+
+Styling the app chrome was deliberately left light: chrome is the application,
+the canvas is the content, and tinting the tool window with the document's theme
+would make it harder to tell which one you're looking at.
+
+**Verification** — the control was exercised against the *real* app (main +
+preload + renderer, not a unit stub): drop a `DataTransfer` holding the fixture,
+then change the select and read back the iframe's `srcdoc`.
+
+```
+initial    value=light  options=[light, dark, auto]  status="Drop a .tsx file here…"
+dropped    Loaded example.canvas.tsx (Light)          light token hits: 24
+dark       Loaded example.canvas.tsx (Dark)           dark token hits: 24, light: 0
+           main log: renderSource (dropped) … {"colorScheme":"dark"}
+           localStorage: canvasReader.colorScheme = "dark"
+auto       Loaded example.canvas.tsx (Match system)
+UI TEST OK
+```
+
+Note the third render in the main-process log per step: the scheme really is
+travelling renderer → preload → IPC → core, and the palette in the output flips
+with it.
+
+---
+
 ## 2026-09-28 — Ship v1.1.0
 
 **Version**
