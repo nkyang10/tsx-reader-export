@@ -1,6 +1,6 @@
 {
   "name": "tsx-reader-export-viewer",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Canvas Reader - open a Cursor canvas .tsx, preview it, save as HTML, or print to PDF via the system dialog.",
   "type": "module",
   "main": "main.mjs",

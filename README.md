@@ -1,7 +1,7 @@
 # Canvas Reader with HTML and PDF
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v1.1.0-informational)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v1.2.0-informational)](CHANGELOG.md)
 [![Windows](https://img.shields.io/badge/download-Windows-informational)](https://github.com/nkyang10/tsx-reader-export/releases/latest)
 
 Turn a **Cursor canvas** `.tsx` file into a **single self-contained HTML page** —
@@ -36,7 +36,7 @@ and can be archived or emailed as a single file.
 
 ## Download
 
-Grab **`tsx-reader-export-1.1.0-windows-x64.zip`** from the
+Grab **`tsx-reader-export-1.2.0-windows-x64.zip`** from the
 [releases page](https://github.com/nkyang10/tsx-reader-export/releases/latest) and
 extract it anywhere. That's the whole installation — then double-click
 **`tsx-reader-export-viewer.exe`**, which is sitting right at the top level.
@@ -45,7 +45,7 @@ extract it anywhere. That's the whole installation — then double-click
 tools.**
 
 ```
-tsx-reader-export-1.1.0-windows-x64\
+tsx-reader-export-1.2.0-windows-x64\
   tsx-reader-export-viewer.exe     <- Canvas Reader, the app — double-click this
   locales\  resources\  *.pak  *.dll   its runtime, keep it beside the exe
   cli\
@@ -69,8 +69,8 @@ manually, then download the `.dmg` or `.zip` from the run or the release.
 
 | | |
 |---|---|
-| Intel Mac | `tsx-reader-export-viewer-1.1.0-mac-x64.dmg` |
-| Apple silicon | `tsx-reader-export-viewer-1.1.0-mac-arm64.dmg` |
+| Intel Mac | `tsx-reader-export-viewer-1.2.0-mac-x64.dmg` |
+| Apple silicon | `tsx-reader-export-viewer-1.2.0-mac-arm64.dmg` |
 
 **It is not signed or notarised**, so Gatekeeper blocks it on first launch.
 Right-click the app → **Open**, or clear the quarantine flag:
@@ -111,7 +111,7 @@ For PDF, pick **Microsoft Print to PDF** or **Save as PDF** in that dialog.
 The dialog is the OS one, so it also prints to a real printer, or to
 OneNote/Word if you have those.
 
-A [`sample-output.pdf`](https://github.com/nkyang10/tsx-reader-export/releases/download/v1.1.0/sample-output.pdf)
+A [`sample-output.pdf`](https://github.com/nkyang10/tsx-reader-export/releases/download/v1.2.0/sample-output.pdf)
 is attached to the release, if you want to see the print result before
 installing anything. It is rendered from the synthetic fixture in
 `testcases/`, not from anyone's real canvas.

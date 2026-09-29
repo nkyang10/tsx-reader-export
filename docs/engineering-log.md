@@ -5,6 +5,55 @@ Append every significant change here with a date and the rationale (rule #6 in
 
 ---
 
+## 2026-09-29 — Ship v1.2.0
+
+**Version**
+
+1.2.0, not 1.1.1. The background fix is a patch, but the viewer's Theme control
+is a feature, and a feature ships in a minor. Both manifests bumped together —
+`npm run check` fails the build if they ever drift again, which they did once.
+
+**How the release is actually published** (worth writing down; it is not one
+step):
+
+1. `npm run build:release` — the CLI SEA exe into `release\cli\`, then
+   electron-builder `--win dir`, flattened so the reader's exe sits at the top
+   level beside its own runtime.
+2. `npm run build:release -- --zip` — the 470 MB tree zipped by `tar -a` into
+   `tsx-reader-export-1.2.0-windows-x64.zip`.
+3. Commit, push `main`, tag `v1.2.0`, push the tag. **The tag is what starts
+   the macOS CI**, which builds the `.app`/`.dmg` on a Mac runner and then
+   creates or updates the GitHub release with those assets. A Windows dev box
+   cannot produce them at all: electron-builder throws on a macOS target off a
+   macOS host.
+4. The Windows zip and the sample PDF are **not** attached by CI, so they are
+   uploaded afterwards to the same release.
+
+There is no `gh` on the dev box, so step 4 goes through the REST API with the
+`GITHUB_TOKEN` in `.env` (never printed, never committed). The macOS workflow
+keeps its own `gh` and uses `--clobber`, so it can be re-run over an existing
+release without stepping on the Windows assets.
+
+**The committed screenshots were re-captured, and rule 12 was applied properly.**
+`npm run capture` writes `docs/images/`, so a release refreshes them as a side
+effect. Before committing the new pixels: the capture ran with no canvas
+argument and no `CAPTURE_OUT`, so `capture.mjs`'s `isFixture` guard means it can
+only have been the synthetic fixture; the rendered HTML's text was re-read and
+is entirely invented ("Service health sample", "Not real data", "Every value on
+this page is invented"); and the four PNGs were decoded to check their average
+and corner colour — same 1424x835, still light (the old ones were captured on a
+light-mode machine, which is exactly why the black-background bug never showed
+up in the README). They changed only because the render did.
+
+**A mistake worth recording:** the first attempt at the version bump in
+`README.md` was a PowerShell `Get-Content -Raw | Set-Content -Encoding UTF8`
+round-trip. PowerShell 5.1 added a BOM *and* destroyed every em-dash in the
+file, which the diff caught immediately. Reverted and redone with exact string
+edits. Never round-trip a UTF-8 file through PowerShell 5.1 cmdlets in this
+repo; use the editor tools, and check `git diff` after any bulk edit.
+
+---
+
 ## 2026-09-29 — Stamp the color scheme onto the exported page
 
 **The report**

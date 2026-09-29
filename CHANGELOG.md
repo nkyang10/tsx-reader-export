@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-29
+
+A canvas does not carry its own theme, so the export has to be told which one —
+and until now it never was. The same HTML rendered black on a dark-mode machine
+and white on a light-mode one, and `--color-scheme` did nothing at all. Both are
+fixed, and the viewer can now ask.
+
 ### Added
 
 - **A Theme control in the viewer** (`Light` / `Dark` / `Match system`), so the
@@ -33,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An unrecognised value now fails with
     `Invalid color scheme: <v>. Expected one of: light, dark, auto.` instead of
     being passed through to Mantine.
+
+**Upgrading:** nothing moves and no flag is renamed — extract the new zip over
+the old folder (or into a new one). Full details in
+[`docs/release-notes-1.2.0.md`](docs/release-notes-1.2.0.md).
 
 ## [1.1.0] - 2026-09-28
 
